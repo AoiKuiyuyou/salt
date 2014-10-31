@@ -2857,6 +2857,54 @@ class BaseHighState(object):
                     #/
                     if 'name' in func_kwarg_di:
                         arg_name_is_in = True
+                
+                    #/
+                    if 'source' in func_kwarg_di:
+                        arg_source_is_in = True
+                        
+                        src_val = func_kwarg_di['source']
+                        
+                        if src_val.startswith('salt://.'):
+                            #/
+                            ## |salt://.| is the syntax I propose for relative path
+                            ##  in the |salt://| scheme, with the dot |.| after |salt://|
+                            ##  indicating it's relative.
+                            ## Code below will convert the relative path to absolute.
+                            
+                            #/
+                            sls_pth_is_file = False
+                            ## False means |sls_pth| maps to a dir containing a |init.sls|.
+                            
+                            #/ search all the file roots, for the first existing
+                            for file_root_path in self.opts['file_roots'][sls_env]:
+                                sls_path = os.path.join(file_root_path, sls_pth)
+                                sls_path_with_ext = sls_path + '.sls'
+                                if os.path.isfile(sls_path_with_ext):
+                                    sls_pth_is_file = True
+                                    break
+                                elif os.path.isdir(sls_path):
+                                    sls_pth_is_file = False
+                                    break
+                                else:
+                                    continue
+                            
+                            #/ remove prefix |salt://| (7 chars)
+                            src_pth = src_val[7:]
+                            
+                            if sls_pth_is_file:
+                            ## This means |sls_pth| maps to a sls file.
+                            ## Need to add |..| to get the dir path.
+                                src_path = os.path.join(sls_pth, '..', src_pth)
+                            else:
+                            ## This means |sls_pth| maps to a dir containing a |init.sls| file
+                            ## |sls_pth| is the dir path already. No need to add |..|.
+                                src_path = os.path.join(sls_pth, src_pth)
+                            src_path = os.path.normpath(src_path)
+                            new_src_val = 'salt://{}'.format(src_path)
+                            func_kwarg_di['source'] = new_src_val
+                    
+                    #/
+                    if arg_name_is_in and arg_source_is_in:
                         break
                 
                 #/ use the old state id as default value for argument |name|
