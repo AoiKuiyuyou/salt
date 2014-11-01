@@ -2763,6 +2763,84 @@ class BaseHighState(object):
         if '__exclude__' in state:
             highstate.setdefault('__exclude__',
                                  []).extend(state.pop('__exclude__'))
+        
+        #/
+        for state_id, state_spec_d in state.items():
+            #/
+            sls_env = state_spec_d['__env__']
+            sls_pth = state_spec_d['__sls__'].replace('.', os.sep)
+            
+            for func_name, func_arg_s in state_spec_d.items():
+                #/ E.g.
+                ## 'pkg': [
+                ##     'installed',
+                ##     {'order': 10000},
+                ##     {'name': 'sudo'},
+                ## ]
+        
+                #/ ignore the two keys that are not func names
+                if func_name in ['__env__', '__sls__']:
+                    continue
+                
+                for func_arg in func_arg_s:
+                    #/ ignore positional argument, e.g. |'installed'| above
+                    if not isinstance(func_arg, dict):
+                        continue
+                    
+                    #/
+                    func_kwarg_di = func_arg
+                    ## |di| means dict as an item, not a collection of items.
+                    ## Because Salt uses one dict for each kwarg,
+                    ##  dict key for argument name, and dict value for argument value, 
+                    ##  e.g. |'order'| and |'name'| above.
+                
+                    #/
+                    if 'source' in func_kwarg_di:
+                        src_val = func_kwarg_di['source']
+                        
+                        if src_val.startswith('salt://.'):
+                            #/
+                            ## |salt://.| is the syntax I propose for relative path
+                            ##  in the |salt://| scheme, with the dot |.| after |salt://|
+                            ##  indicating it's relative.
+                            ## Code below will convert the relative path to absolute.
+                            
+                            #/
+                            sls_pth_is_file = False
+                            ## False means |sls_pth| maps to a dir containing a |init.sls|.
+                            
+                            #/ search all the file roots, for the first existing
+                            for file_root_path in self.opts['file_roots'][sls_env]:
+                                sls_path = os.path.join(file_root_path, sls_pth)
+                                sls_path_with_ext = sls_path + '.sls'
+                                if os.path.isfile(sls_path_with_ext):
+                                    sls_pth_is_file = True
+                                    break
+                                elif os.path.isdir(sls_path):
+                                    sls_pth_is_file = False
+                                    break
+                                else:
+                                    continue
+                            
+                            #/ remove prefix |salt://| (7 chars)
+                            src_pth = src_val[7:]
+                            
+                            if sls_pth_is_file:
+                            ## This means |sls_pth| maps to a sls file.
+                            ## Need to add |..| to get the dir path.
+                                src_path = os.path.join(sls_pth, '..', src_pth)
+                            else:
+                            ## This means |sls_pth| maps to a dir containing a |init.sls| file
+                            ## |sls_pth| is the dir path already. No need to add |..|.
+                                src_path = os.path.join(sls_pth, src_pth)
+                            src_path = os.path.normpath(src_path)
+                            new_src_val = 'salt://{}'.format(src_path)
+                            func_kwarg_di['source'] = new_src_val
+                    
+                        #/
+                        break
+        
+        #/
         for id_ in state:
             if id_ in highstate:
                 if highstate[id_] != state[id_]:
